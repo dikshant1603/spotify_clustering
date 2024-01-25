@@ -1,0 +1,422 @@
+---
+title: |
+  | Final Project
+  | DS 807: Modeling Unstructured Data
+author: |
+  | Your Name Goes Here
+output: html_document
+---
+
+## Data Requirements:
+
+- You can pick any type of data that satisfies **at least one** of the following criteria:
+
+    1. Text Data
+    2. Image Data
+    3. Unsupervised Data
+
+
+- Some sources are:
+
+    - Kaggle <https://www.kaggle.com/datasets>
+    - UCI Machine Learning Repository <https://archive.ics.uci.edu/ml/index.php>
+    
+- Read your data in R.
+
+```{r}
+library(tidytext)
+library(dplyr)
+library(ISLR) 
+library(factoextra)
+library(cluster)
+library(tidyverse)
+library(tidyr)
+library(RColorBrewer)
+library(EnvStats)
+library(ggpubr)
+```
+
+
+```{r}
+spotify<-read.csv("C:/Masters/Unh/Unstruc_data/Project/data/dataset_Year.csv", header = TRUE, sep = ",")
+
+sum(is.na(spotify))
+spotify=drop_na(spotify)
+sum(is.na(spotify))
+```
+
+## The grading rubric can be found below:
+
++----------------+---------------+--------------------+-----------------------+
+|                | R code        | Decision/Why       | Communication         |
+|                |               |                    |  of findings          |
++================+===============+====================+=======================+
+| Percentage of  | 30%           | 35%                | 35%                   |
+| Assigned Points|               |                    |                       |
++----------------+---------------+--------------------+-----------------------+
+
+
+- **Decision/why?**: Explain your reasoning behind your choice of the procedure, set of variables and such for the question. 
+
+    - Explain why you use the procedure/model/variables
+    - To exceed this criterion, describe steps taken to implement the procedure in a non technical way.
+
+
+- **Communication of your findings**: Explain your results.
+
+    - Explain why you think one model is better than the other.
+    - To exceed this criterion, explain your model in a non technical way.
+
+## Note
+
+- Since there is a great range of potential data, the instructions are written in a general way. If some steps do not make sense in your case, please reach out to verify.
+
+## Part 1: Exploratory Data Analysis (20 points)
+
+1. Explain the purpose of the analysis *for your data*, i.e., what are you trying to achieve?
+
+2. Check for existence of NA's (missing data)
+
+3. Use appropriate plots for EDA, i.e., word counts for text data.
+
+4. Do you need to scale your data or do you need dimension reduction? If so, perform a principle components analysis on a scaled, or not-scaled data depending on your needs.
+
+```{r}
+#Top 10 genres by Popularity
+spotify%>%
+  select(popularity,track_genre)%>%
+  group_by(track_genre)%>%
+  summarize(Avg_Popularity=mean(popularity))%>%
+  arrange(desc(Avg_Popularity))%>%
+  top_n(10, Avg_Popularity)%>%
+    ungroup()%>%
+  ggplot(aes(y = reorder(track_genre, Avg_Popularity), x = Avg_Popularity)) +
+  geom_bar(aes(fill = Avg_Popularity), stat = "identity") +
+  scale_fill_gradient(low = "#F9CCDA", high = "#5A3DDA") +
+  labs(title = "Top 10 most popular genre",
+       y = "genre",
+       x = "Popularity") +
+  theme_minimal()
+
+#Top 10 songs covering most of the genres
+spotify%>%
+  select(track_name,track_genre)%>%
+  group_by(track_name)%>%
+  summarise(Number_of_genre=n())%>%
+  select(track_name,Number_of_genre)%>%
+  group_by(track_name)%>%
+  top_n(1,Number_of_genre)%>%
+  ungroup()%>%
+  arrange(desc(Number_of_genre))%>%
+  top_n(10,Number_of_genre)%>%
+  ggplot(aes(y = reorder(track_name, Number_of_genre), x = Number_of_genre)) +
+  geom_bar(aes(fill = Number_of_genre), stat = "identity") +
+  scale_fill_gradient(low = "#a9CCDA", high = "#0A3DDA") +
+  labs(title = "Top 10 most popular songs",
+       y = "Song",
+       x = "Popularity") +
+  theme_minimal()
+
+#Top 2 Songs in top 10 genres
+top_10_genre=spotify%>%
+  select(popularity,track_genre)%>%
+  group_by(track_genre)%>%
+  summarize(Avg_Popularity=mean(popularity))%>%
+  top_n(10,Avg_Popularity)
+
+spotify%>%
+  select(popularity,track_name,track_genre)%>%
+  filter(track_genre == top_10_genre$track_genre)%>%
+  group_by(track_genre)%>%
+  slice_max(n=2,popularity, with_ties = FALSE)%>%
+  mutate(label = paste0(track_name))%>%
+  ggplot(aes(y = reorder(track_name, popularity), x = popularity)) +
+  geom_bar(aes(fill=factor(track_genre)),position = position_dodge(),stat = "summary") +
+  geom_label( x=20, aes(label=label), size=2) +
+  labs(title = "Top 2 songs for top 10 popular genres",
+       y = "songs",
+       x = "Popularity") +
+  theme_minimal()+
+  scale_fill_brewer(palette="BrBG")+
+  theme(axis.text.y=element_blank(),
+        axis.ticks.y=element_blank())
+
+#Popularity % accross whole data
+spotify_temp<-spotify%>%
+  mutate(Popularity = ifelse(popularity<=25,"Least Popular",ifelse(popularity>25 & popularity<=50,"Not so Popular",ifelse(popularity>50 & popularity<=75, "Popular", "Most Popular"))))
+
+spotify_temp%>%
+  group_by(Popularity)%>%
+  summarise(Count=n())%>%
+  mutate(Popularity=as.factor(Popularity),percentage=round(Count/sum(Count)*100,2),ymax =cumsum(percentage),ymin = c(0, head(ymax, n=-1)),LabelPosition = (ymax + ymin)/2, label = paste0(Popularity, "\n value: ", Count, "\n", percentage,"%"))%>%
+           ggplot(aes(ymax=ymax, ymin=ymin, xmax=4, xmin=3, fill=Popularity)) +
+  geom_rect() +
+  geom_label( x=4, aes(y=LabelPosition, label=label), size=4) +
+  scale_fill_brewer(palette=4) +
+  coord_polar(theta="y") +
+  xlim(c(2, 4)) +
+  theme_void()+
+  theme(legend.position = "none")
+
+ggplot(spotify,aes(loudness,energy)) +
+   geom_point(col="violet")+
+  geom_smooth(model="lm",col="darkblue")+
+  stat_regline_equation(label.y = 0.8, aes(label = ..eq.label..)) +
+  stat_regline_equation(label.y = 0.9, aes(label = ..rr.label..))
+
+```
+## Part 2: Clustering (20 points)
+
+1. Develop a clustering algorithm for your data: Choose from topic models, k-means, k-medoids, hierarchical, or DBSCAN. 
+
+```{r}
+#taking variables for clustering
+
+set.seed(1994)
+spotify_v3<-sample(nrow(spotify),size=nrow(spotify)*1)
+spotify_v4<-spotify[spotify_v3,]
+spotify_v5<-spotify_v4
+
+clean<-spotify_v5%>%
+  select(-track_genre,-ID)
+
+clean<-distinct(clean)
+
+spotify_knn<-clean%>%
+  select(where(is.numeric),-popularity,-key,-mode,-time_signature,-energy)%>%
+  scale()
+
+head(spotify_knn)
+
+spotify_knn<-spotify_knn%>%
+  scale()
+```
+
+
+```{r}
+#Finding clusters : ELBOW METHOD
+
+#The Elbow method looks at the total WSS as a function of the number of clusters: One should choose a number of clusters so that adding another cluster doesn’t improve much better the total WSS.
+
+fviz_nbclust(spotify_knn, kmeans, method = "wss",k.max=10)
+
+
+#We choose k=3 after which the wss increases
+```
+
+
+```{r}
+#K-means Clustering Method
+set.seed(1234)
+km=kmeans(spotify_knn, 3)
+fviz_cluster(km, data =spotify_knn,palette = "jco", ggtheme = theme_minimal())
+
+```
+
+```{r}
+#clusterplot
+fviz_cluster(km, data = spotify_knn, geom = c("point"),ellipse.type = "euclid")
+```
+
+```{r}
+# cluster assignment
+cluster<-km$cluster
+clean$cluster <- as.factor(km$cluster)
+
+song_clustered<-clean%>%
+  select(artists,track_name,cluster)
+song_clustered
+```
+
+
+2. Explain your choices on model parameters, i.e. k, eps, minpts, and communicate your results.
+
+We tried to find optimal number of clusters by using WSS and silhouette method. Silhouette method showed 2 clusters. From WSS method, we observed that anymore clusters from2 is good. So, we decided to take k=3.
+We ran k-means clustering method on the data. For this, we removed all non-numeric variables from the data. The compactness is 27.8% by which they are similar to each other in the cluster.
+
+Cluster 1: Danceable, loud and high energy and valance (positive, cheerful songs)  
+Eg: Sucker by Jonas Brothers, Naaka Mooka, Vijay Antony
+
+Cluster 2: showing high energy, loudness,liveness and high tempo characteristics (inspirational song) - 
+Eg: Story of My Life by One Direction
+
+Cluster 3: This cluster has songs that are high in accoustic, instrumental and comparably less duration. This type of music emphasizes simplicity in its lyrics, harmonies, melodies or melancholies. 
+Eg: 
+
+
+## Part 3: Mixture Models (20 points)
+
+1. Apply a mixture model based clustering to your data.
+
+2. Explain your choices on model parameters, and communicate your results.
+
+```{r}
+set.seed(1234)
+
+spotify_v4<-spotify%>%
+  select(-ID,-popularity,-key,-mode,-time_signature)
+
+spotify_k<-sample(nrow(spotify),size=nrow(spotify)*0.03)
+spotify_pre=spotify_v4[spotify_k,]
+track_name=spotify_pre$track_name  
+
+spotify_pre=spotify_pre%>%
+  select(where(is.numeric))%>%
+  scale()
+
+mix_m=Mclust(spotify_pre)
+
+summary(mix_m, parameters=TRUE)
+
+cluster <- mix_m$classification
+
+plot(mix_m, what="classification")
+
+param_comp_1=mix_m$parameters$pro[1]
+param_comp_2=mix_m$parameters$pro[2]
+param_comp_3=mix_m$parameters$pro[3]
+param_comp_4=mix_m$parameters$pro[4]
+param_comp_5=mix_m$parameters$pro[5]
+param_comp_6=mix_m$parameters$pro[6]
+param_comp_7=mix_m$parameters$pro[7]
+param_comp_8=mix_m$parameters$pro[8]
+param_comp_9=mix_m$parameters$pro[9]
+
+spotify_pre=as.data.frame(spotify_pre)
+
+spotify_c<-spotify_pre %>%
+  mutate(Cluster=factor(mix_m$classification),Track_name=track_name)
+
+#spotify_c<-spotify_pre %>%
+ # mutate(Track_name=track_name)
+
+spotify_c %>%
+  group_by(Cluster) %>%
+  mutate(Number=row_number()) %>%
+  ggplot(aes(x=Number, y=Cluster, col=Cluster)) + 
+  geom_text(aes(label=Track_name), size=3)+
+  theme(legend.position = "none")
+```
+
+## Part 4: Deep Learning (20 points)
+
+1. Apply a type of neural network algorithm to your data.
+
+```{r}
+# Load required packages
+library(tidyverse)
+library(caret)
+library(keras)
+```
+
+
+```{r}
+# Load Spotify dataset
+# Define input and output variables
+clean_2<-spotify%>%
+  select(-track_genre,-ID)
+
+clean_2<-distinct(clean_2)
+
+# Split data into training and validation sets
+spotify_ffnn<-clean_2%>%
+  select(-c("track_id","popularity","artists","album_name","track_name","explicit","Year"))
+```
+
+
+```{r}
+set.seed(1994)
+index = sample(1: nrow(spotify_ffnn), round(0.7*nrow(spotify_ffnn)))
+train = spotify_ffnn[index,]
+test = spotify_ffnn[-index,]
+
+nrow(spotify_ffnn)
+nrow(train)
+nrow(test)
+
+
+x_train <- train[,1:4]
+y_train <- as.matrix(train[,5:13])
+
+x_test <- test[,1:4]
+y_test <- as.matrix(test[,5:13])
+
+
+#max minus min scale
+maxs=apply(x_train[,1:4], 2, max)
+mins=apply(x_train[,1:4], 2, min)
+x_train<-scale(x_train[,1:4],center = mins, scale = maxs - mins)
+
+maxt=apply(x_test[,1:4], 2, max)
+mint=apply(x_test[,1:4], 2, min)
+x_test<-scale(x_test[,1:4],center = mint, scale = maxt - mint)
+
+
+```
+
+
+```{r}
+# Define MLP model architecture
+model=keras_model_sequential()
+model %>%
+  layer_dense(units=64, activation='relu', input_shape=ncol(x_train)) %>%
+  layer_dropout(rate = 0.4) %>%
+  layer_dense(units = 32, activation = 'relu') %>%
+  layer_dropout(rate = 0.4) %>%
+  layer_dense(units =9, activation='linear')
+
+summary(model)
+```
+
+
+
+```{r}
+# Compile model
+model %>% 
+  compile(loss = 'mse',
+          optimizer = 'rmsprop',
+          metrics=c('accuracy', 'mae')
+          )
+
+# Train model
+history<-model %>% 
+  fit(x_train, y_train, epochs = 50, batch_size = 64,verbose=1,validation_split = 0.2)
+
+model %>% 
+  evaluate(x_test, y_test)
+
+#Prediction
+pred<-model %>%
+  predict(x_test)
+```
+
+```{r}
+temp<-as.matrix(pred)
+plot(y_test[,2],col="grey",xlab = "Test Values", ylab = "Predictions", main = "Predictions vs. Test Values")
+points(temp[,2], col="brown")
+
+```
+
+2. Explain your choices on model parameters, and communicate your results.
+
+
+## Part 5: Conclusion (20 points)
+
+1. (10 points) Based on the purpose of your analysis stated in Part 1, which analysis did a good/better/satisfactory job? How do you think you can improve the analysis?
+
+    
+2. (10 points) What are your learning outcomes for this assignment? Please focus on your learning outcomes in terms of analysis, model interpretations, and R skills - it is up to you to include this part in your presentation or not.
+
+
+
+```{r}
+km$centers
+Clusters=c("Cluster-1", "Cluster-2", "Cluster-3")
+Characteristics=c("Danceability, Loudness", "Liveness, Loudness, High Tempo", "Instrumentalness, Acousticness")
+Song=c("Attention", "Caslte of the Glass", "Kun Faya Kun")
+tbl2 <- data.frame(Clusters, Characteristics,Song)
+library(kableExtra)
+tbll2<-knitr::kable(tbl2, format = "html")
+kable_styling(tbll2, bootstrap_options = c("striped", "hover","condensed"))
+```
+

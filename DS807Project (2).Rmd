@@ -3,7 +3,7 @@ title: |
   | Final Project
   | DS 807: Modeling Unstructured Data
 author: |
-  | Your Name Goes Here
+  | Naveen, Dikshant, Reethika
 output: html_document
 ---
 
